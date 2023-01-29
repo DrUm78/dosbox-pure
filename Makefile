@@ -171,14 +171,14 @@ else
       endif
     endif
   endif
-  CXX_VER := $(shell $(CXX) -v 2>&1)
-  ifneq ($(and $(findstring arm,$(CXX_VER)),$(findstring version 10,$(CXX_VER))),)
+#  CXX_VER := $(shell $(CXX) -v 2>&1)
+#  ifneq ($(and $(findstring arm,$(CXX_VER)),$(findstring version 10,$(CXX_VER))),)
     # Switch to gcc 9 to avoid buggy assembly genetation of gcc 10
     # On armv7l, gcc 10.2 with -O2 on the file core_dynrec.cpp generates assembly that wrongfully passes NULL to the runcode function
     # resulting in a segfault crash. It can be observed by writing block->cache.start to stdout twice where it is NULL at first
     # and then the actual value thereafter. This affects upstream SVN DOSBox as well as this core.
-    CXX := g++-9
-  endif
+#    CXX := g++-9
+#  endif
 endif
 
 ifeq ($(BUILD),DEBUG)
@@ -186,11 +186,11 @@ ifeq ($(BUILD),DEBUG)
   CFLAGS   := -DDEBUG -D_DEBUG -g -O0
 else ifeq ($(BUILD),PROFILE)
   BUILDDIR := profile
-  CFLAGS   := -DNDEBUG -O2
+  CFLAGS   := -DNDEBUG -Ofast
 else ifeq ($(BUILD),RELEASEDBG)
   BUILDDIR := releasedbg
-  CFLAGS   := -DNDEBUG -ggdb -O2
-  LDFLAGS  += -ggdb -O2
+  CFLAGS   := -DNDEBUG -ggdb -Ofast
+  LDFLAGS  += -ggdb -Ofast
 else ifeq ($(BUILD),ASAN)
   BUILDDIR := asan
   CFLAGS   := -DDEBUG -D_DEBUG -g -O0 -fsanitize=address -fno-omit-frame-pointer
@@ -201,9 +201,9 @@ else
   ifeq ($(platform),vita)
     CFLAGS   := -DNDEBUG -O3 -fno-ident -fno-partial-inlining
   else
-    CFLAGS   := -DNDEBUG -O2 -fno-ident
+    CFLAGS   := -DNDEBUG -Ofast -fno-ident
   endif
-  LDFLAGS  += -O2
+  LDFLAGS  += -Ofast
 endif
 
 CFLAGS  += $(CPUFLAGS) -std=gnu++11 -fomit-frame-pointer -fexceptions -Wno-address-of-packed-member -Wno-format -Wno-switch -Wno-psabi
@@ -245,9 +245,9 @@ ifeq ($(STATIC_LINKING), 1)
 else
 	$(info Linking $@ ...)
 	$(CXX) $(LDFLAGS) -o $@ $^ $(LDLIBS)
-ifneq ($(BUILD),DEBUG)
-	$(STRIPCMD) $@
-endif
+#ifneq ($(BUILD),DEBUG)
+#	$(STRIPCMD) $@
+#endif
 endif
 
 define COMPILE
