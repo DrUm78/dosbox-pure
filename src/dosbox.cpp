@@ -95,7 +95,7 @@ void DISNEY_Init(Section*);
 void SERIAL_Init(Section*);
 
 
-#if C_IPX
+#if C_IPX || defined(C_DBP_ENABLE_LIBRETRO_IPX)
 void IPX_Init(Section*);
 #endif
 
@@ -135,14 +135,13 @@ static Bit32u ticksAdded;
 Bit32s ticksDone;
 Bit32u ticksScheduled;
 bool ticksLocked;
-bool DBP_CPUOverload;
 void increaseticks();
 #endif
 
 #include "shell.h"
 struct DBP_ShutdownCPU
 {
-	static Bitu Loop(void) { return 1; }
+	static Bitu Loop(void) { PIC_Ticks++; return 1; }
 	static Bits CPUDecoder(void) { return -1; }
 	static void Shutdown()
 	{
@@ -303,8 +302,7 @@ void increaseticks() { //Make it return ticksRemain and set it in the function a
 	ticksRemain = ticksNew-ticksLast;
 	ticksLast = ticksNew;
 	ticksDone += ticksRemain;
-	//DBP: store result of this into ticksCPUOverload to give user feedback when max cycles is too high
-	if ( (DBP_CPUOverload = (ticksRemain > 20)) ) {
+	if ( ticksRemain > 20 ) {
 //		LOG(LOG_MISC,LOG_ERROR)("large remain %d",ticksRemain);
 		ticksRemain = 20;
 	}
@@ -405,28 +403,25 @@ void DOSBOX_SetNormalLoop() {
 	loop=Normal_Loop;
 }
 
+#if 0
+Bit32u pagefault_old_esp;
+Bitu pagefault_faultcode;
+std::jmp_buf pagefault_jmp_buf;
+#endif
+
 void DOSBOX_RunMachine(void){
 #ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
 	restartloop:
 	static Bit32u looprecursion;
 	looprecursion++;
 #endif
-	restartloop2:
-	try
-	{
 
+	PAGE_FAULT_TRY
 	Bitu ret;
 	do {
 		ret=(*loop)();
 	} while (!ret);
-
-	}
-	catch (GuestPageFaultException& pf) {
-		paging_prevent_exception_jump = true;
-		CPU_Exception(EXCEPTION_PF,pf.faultcode);
-		paging_prevent_exception_jump = false;
-		goto restartloop2;
-	}
+	PAGE_FAULT_CATCH
 
 #ifdef C_DBP_PAGE_FAULT_QUEUE_WIPE
 	if (--looprecursion == 0)
@@ -461,7 +456,6 @@ static void DOSBOX_UnlockSpeed( bool pressed ) {
 			CPU_CycleAutoAdjust = true;
 		}
 	}
-	DBP_CPUOverload = false;
 }
 #endif
 
@@ -582,7 +576,7 @@ void DOSBOX_Init(void) {
 #ifndef C_DBP_LIBRETRO
 	Pint->SetMinMax(1,63);
 #else
-	Pint->SetMinMax(1,224);
+	Pint->SetMinMax(1,2048);
 #endif
 	Pint->Set_help(
 		"Amount of memory DOSBox has in megabytes.\n"
@@ -718,6 +712,10 @@ void DOSBOX_Init(void) {
 	Pint = secprop->Add_int("prebuffer",Property::Changeable::OnlyAtStart,25);
 	Pint->SetMinMax(0,100);
 	Pint->Set_help("How many milliseconds of data to keep on top of the blocksize.");
+
+#ifdef C_DBP_LIBRETRO
+	secprop->Add_bool("swapstereo",Property::Changeable::WhenIdle,false);
+#endif
 
 	secprop=control->AddSection_prop("midi",&MIDI_Init,true);//done
 	secprop->AddInitFunction(&MPU401_Init,true);//done
@@ -881,8 +879,14 @@ void DOSBOX_Init(void) {
 	Pint->Set_help("the percentage of motion to ignore. 100 turns the stick into a digital one.");
 
 	secprop=control->AddSection_prop("serial",&SERIAL_Init,true);
-	const char* serials[] = { "dummy", "disabled", "modem", "nullmodem",
-	                          "directserial",0 };
+	const char* serials[] = { "dummy", "disabled",
+#if C_MODEM
+	                          "modem", "nullmodem", "directserial",
+#endif
+#ifdef C_DBP_ENABLE_LIBRETRO_MODEM
+	                          "libretro",
+#endif
+	                          0 };
 
 	Pmulti_remain = secprop->Add_multiremain("serial1",Property::Changeable::WhenIdle," ");
 	Pstring = Pmulti_remain->GetSection()->Add_string("type",Property::Changeable::WhenIdle,"dummy");
@@ -891,6 +895,7 @@ void DOSBOX_Init(void) {
 	Pstring = Pmulti_remain->GetSection()->Add_string("parameters",Property::Changeable::WhenIdle,"");
 	Pmulti_remain->Set_help(
 		"set type of device connected to com port.\n"
+#if C_MODEM
 		"Can be disabled, dummy, modem, nullmodem, directserial.\n"
 		"Additional parameters must be in the same line in the form of\n"
 		"parameter:value. Parameter for all types is irq (optional).\n"
@@ -900,6 +905,11 @@ void DOSBOX_Init(void) {
 		"for nullmodem: server, rxdelay, txdelay, telnet, usedtr,\n"
 		"               transparent, port, inhsocket (all optional).\n"
 		"Example: serial1=modem listenport:5000");
+#endif
+#ifdef C_DBP_ENABLE_LIBRETRO_MODEM
+		"Can be disabled, dummy, libretro.\n"
+		"Example: serial1=libretro");
+#endif
 
 	Pmulti_remain = secprop->Add_multiremain("serial2",Property::Changeable::WhenIdle," ");
 	Pstring = Pmulti_remain->GetSection()->Add_string("type",Property::Changeable::WhenIdle,"dummy");
@@ -941,6 +951,11 @@ void DOSBOX_Init(void) {
 	Pbool = secprop->Add_bool("umb",Property::Changeable::WhenIdle,true);
 	Pbool->Set_help("Enable UMB support.");
 
+#ifdef C_DBP_LIBRETRO
+	Pint = secprop->Add_int("memlimit", Property::Changeable::OnlyAtStart,0);
+	Pint->Set_help("Limit free conventional memory (default to all available, specified in kilobytes < 640)");
+#endif
+
 	secprop->AddInitFunction(&DOS_KeyboardLayout_Init,true);
 	Pstring = secprop->Add_string("keyboardlayout",Property::Changeable::WhenIdle, "auto");
 	Pstring->Set_help("Language code of the keyboard layout (or none).");
@@ -949,7 +964,7 @@ void DOSBOX_Init(void) {
 	secprop->AddInitFunction(&MSCDEX_Init);
 	secprop->AddInitFunction(&DRIVES_Init);
 	secprop->AddInitFunction(&CDROM_Image_Init);
-#if C_IPX
+#if C_IPX || defined(C_DBP_ENABLE_LIBRETRO_IPX)
 	secprop=control->AddSection_prop("ipx",&IPX_Init,true);
 	Pbool = secprop->Add_bool("ipx",Property::Changeable::WhenIdle, false);
 	Pbool->Set_help("Enable ipx over UDP/IP emulation.");

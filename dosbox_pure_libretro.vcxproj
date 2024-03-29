@@ -187,6 +187,7 @@
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
       <WarningLevel>Level2</WarningLevel>
     </ClCompile>
+    <ClCompile Include="src\dbp_network.cpp" />
     <ClCompile Include="src\dbp_serialize.cpp">
       <Optimization Condition="'$(Configuration)'=='Debug'">MaxSpeed</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)'=='Debug'">Default</BasicRuntimeChecks>
@@ -237,6 +238,7 @@
     <ClCompile Include="src\dos\drive_local.cpp" />
     <ClCompile Include="src\dos\drive_memory.cpp" />
     <ClCompile Include="src\dos\drive_overlay.cpp" />
+    <ClCompile Include="src\dos\drive_patch.cpp" />
     <ClCompile Include="src\dos\drive_union.cpp" />
     <ClCompile Include="src\dos\drive_virtual.cpp" />
     <ClCompile Include="src\dos\drive_zip.cpp">
@@ -527,6 +529,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="core_options.h" />
+    <ClInclude Include="include\dbp_network.h" />
     <ClInclude Include="include\dbp_serialize.h" />
     <ClInclude Include="libretro-common\include\libretro.h" />
     <ClInclude Include="include\bios.h" />
@@ -567,6 +570,8 @@
     <ClInclude Include="include\timer.h" />
     <ClInclude Include="include\vga.h" />
     <ClInclude Include="include\video.h" />
+    <ClInclude Include="dosbox_pure_osd.h" />
+    <ClInclude Include="dosbox_pure_run.h" />
     <ClInclude Include="src\cpu\core_dyn_x86\decoder.h" />
     <ClInclude Include="src\cpu\core_dyn_x86\dyn_fpu.h" />
     <ClInclude Include="src\cpu\core_dyn_x86\dyn_fpu_dh.h" />
@@ -621,6 +626,7 @@
     <ClInclude Include="src\gui\midi_mt32.h" />
     <ClInclude Include="src\gui\midi_retro.h" />
     <ClInclude Include="src\gui\midi_tsf.h" />
+    <ClInclude Include="src\gui\midi_opl.h" />
     <ClInclude Include="src\gui\render_glsl.h" />
     <ClInclude Include="src\gui\render_loops.h" />
     <ClInclude Include="src\gui\render_scalers.h" />

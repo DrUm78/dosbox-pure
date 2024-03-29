@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2020-2022  Bernhard Schelling
+ *  Copyright (C) 2020-2023  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -486,15 +486,15 @@ private:
 
 //DBP: New drive types
 #define FALSE_SET_DOSERR(ERRNAME) (dos.errorcode = (DOSERR_##ERRNAME), false)
-#define TRUE_CLEAR_DOSERR() (dos.errorcode = 0, true)
 #define DOSPATH_REMOVE_ENDINGDOTS(VAR) char VAR##_buf[DOS_PATHLENGTH]; DrivePathRemoveEndingDots((const char**)&VAR, VAR##_buf)
 #define DOSPATH_REMOVE_ENDINGDOTS_KEEP(VAR) const char* VAR##_org = VAR; DOSPATH_REMOVE_ENDINGDOTS(VAR)
 void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH]);
+Bit8u DriveGetIndex(DOS_Drive* drv); // index in Drives array, returns DOS_DRIVES if not found
 bool DriveForceCloseFile(DOS_Drive* drv, const char* name);
 bool DriveFindDriveVolume(DOS_Drive* drv, char* dir_path, DOS_DTA & dta, bool fcb_findfirst);
 Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source, Bit32u source_len);
 DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize = NULL, bool* writable = NULL, char const* relative_to = NULL);
-bool FindAndReadDosFile(char const* filename, std::string& out, Bit32u maxsize = 1024*1024, char const* relative_to = NULL);
+bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize = 1024*1024);
 Bit16u DriveReadFileBytes(DOS_Drive* drv, const char* path, Bit8u* outbuf, Bit16u numbytes);
 bool DriveCreateFile(DOS_Drive* drv, const char* path, const Bit8u* buf, Bit32u numbytes);
 Bit32u DriveCalculateCRC32(const Bit8u *ptr, size_t len, Bit32u crc = 0);
@@ -620,7 +620,7 @@ struct rawFile : public DOS_File
 	virtual bool Write(Bit8u* data, Bit16u* size) { if (!OPEN_IS_WRITING(flags)) return false; *size = (Bit16u)fwrite(data, 1, *size, f); return (*size && open); }
 	virtual bool Seek(Bit32u* pos, Bit32u type) { fseek_wrap(f, *pos, type); *pos = (Bit32u)ftell_wrap(f); return open; }
 	virtual bool Seek64(Bit64u* pos, Bit32u type) { fseek_wrap(f, *pos, type); *pos = (Bit64u)ftell_wrap(f); return open; }
-	Bit16u GetInformation(void) { return 0; }
+	virtual Bit16u GetInformation(void) { return (OPEN_IS_WRITING(flags) ? 0x40 : 0); }
 };
 
 class memoryDrive : public DOS_Drive {
@@ -652,7 +652,7 @@ private:
 
 class zipDrive : public DOS_Drive {
 public:
-	zipDrive(DOS_File* zip, bool enter_solo_root_dir);
+	zipDrive(DOS_File* zip, bool enable_crc_check = false, bool enter_solo_root_dir = false);
 	virtual ~zipDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
@@ -680,8 +680,8 @@ private:
 class unionDrive : public DOS_Drive {
 public:
 	unionDrive(DOS_Drive& under, DOS_Drive& over, bool autodelete_under = false, bool autodelete_over = false);
-	unionDrive(DOS_Drive& under, const char* save_file = NULL, bool autodelete_under = false);
-	bool IsShadowedDrive(const DOS_Drive* drv) const;
+	unionDrive(DOS_Drive& under, const char* save_file = NULL, bool autodelete_under = false, bool strict_mode = false);
+	void AddUnder(DOS_Drive& add_under, bool autodelete_under = false);
 	virtual ~unionDrive();
 	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
 	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
@@ -697,12 +697,39 @@ public:
 	virtual bool GetFileAttr(char * name, Bit16u * attr);
 	virtual bool GetLongFileName(const char* name, char longname[256]);
 	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
+	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b);
 	virtual Bit8u GetMediaByte(void);
 	virtual bool isRemote(void);
 	virtual bool isRemovable(void);
 	virtual Bits UnMount(void);
 private:
 	struct unionDriveImpl* impl;
+};
+
+class patchDrive : public DOS_Drive {
+public:
+	patchDrive(DOS_Drive* under, bool autodelete_under, DOS_File* patchzip = NULL, bool enable_crc_check = false);
+	virtual ~patchDrive();
+	virtual bool FileOpen(DOS_File * * file, char * name,Bit32u flags);
+	virtual bool FileCreate(DOS_File * * file, char * name,Bit16u attributes);
+	virtual bool Rename(char * oldname,char * newname);
+	virtual bool FileUnlink(char * name);
+	virtual bool FileExists(const char* name);
+	virtual bool RemoveDir(char * dir);
+	virtual bool MakeDir(char * dir);
+	virtual bool TestDir(char * dir);
+	virtual bool FindFirst(char * dir, DOS_DTA & dta, bool fcb_findfirst=false);
+	virtual bool FindNext(DOS_DTA & dta);
+	virtual bool FileStat(const char* name, FileStat_Block * const stat_block);
+	virtual bool GetFileAttr(char * name, Bit16u * attr);
+	virtual bool AllocationInfo(Bit16u * bytes_sector, Bit8u * sectors_cluster, Bit16u * total_clusters, Bit16u * free_clusters);
+	virtual bool GetShadows(DOS_Drive*& a, DOS_Drive*& b);
+	virtual Bit8u GetMediaByte(void);
+	virtual bool isRemote(void);
+	virtual bool isRemovable(void);
+	virtual Bits UnMount(void);
+private:
+	struct patchDriveImpl* impl;
 };
 
 #endif

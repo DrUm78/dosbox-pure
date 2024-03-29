@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2022 Bernhard Schelling
+ *  Copyright (C) 2020-2023 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -20,7 +20,6 @@
 #include "dos_inc.h"
 #include "drives.h"
 
-#include "drives.h"
 #include <time.h>
 #include <vector>
 
@@ -105,7 +104,12 @@ struct Memory_Handle : public DOS_File
 	virtual bool Write(Bit8u* data, Bit16u* size)
 	{
 		if (!OPEN_IS_WRITING(flags)) return FALSE_SET_DOSERR(ACCESS_DENIED);
-		if (!*size) return true;
+		if (!*size)
+		{
+			// file resizing/truncating
+			src->mem_data.resize(mem_pos);
+			return true;
+		}
 		size_t newsize = mem_pos + *size;
 		if (newsize > src->mem_data.size()) src->mem_data.resize(newsize);
 		memcpy(&src->mem_data.operator[](mem_pos), data, *size);

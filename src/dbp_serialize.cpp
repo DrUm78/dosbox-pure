@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2022 Bernhard Schelling
+ *  Copyright (C) 2020-2023 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -270,14 +270,14 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 	Bit64s from = __rdtsc();
 	#endif
 
-	ar.version = 5;
+	ar.version = 6;
 	if (ar.mode != DBPArchive::MODE_ZERO)
 	{
 		Bit32u magic = 0xD05B5747;
 		Bit8u invalid_state = (dos_running ? 0 : 1) | (game_running ? 0 : 2);
 		ar << magic << ar.version << invalid_state;
 		if (magic != 0xD05B5747) { ar.had_error = DBPArchive::ERR_LAYOUT; return; }
-		if (ar.version < 1 || ar.version > 5) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
+		if (ar.version < 1 || ar.version > 6) { DBP_ASSERT(false); ar.had_error = DBPArchive::ERR_VERSION; return; }
 		if (ar.mode == DBPArchive::MODE_LOAD || ar.mode == DBPArchive::MODE_SAVE)
 		{
 			if (!dos_running  || (invalid_state & 1)) { ar.had_error = DBPArchive::ERR_DOSNOTRUNNING; return; }
@@ -285,9 +285,11 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 		}
 	}
 
+	Bitu memory_mb = MEM_TotalPages() / ((1024*1024)/MEM_PAGE_SIZE);
 	Bit8u serialized_machine = (Bit8u)machine, current_machine = serialized_machine;
-	Bit8u serialized_memory = (Bit8u)(MEM_TotalPages() * MEM_PAGE_SIZE / (1024*1024)), current_memory = serialized_memory;
+	Bit8u serialized_memory = (Bit8u)(memory_mb < 225 ? memory_mb : (223+memory_mb/128)), current_memory = serialized_memory;
 	Bit8u serialized_vgamem = (Bit8u)(vga.vmemsize / (1024*128)), current_vgamem = serialized_vgamem;
+	DBP_ASSERT(MEM_TotalPages() == (current_memory < 225 ? current_memory : (current_memory-223)*128)*256);
 	ar << serialized_machine << serialized_memory << serialized_vgamem;
 	if (ar.mode == DBPArchive::MODE_LOAD)
 	{
@@ -341,6 +343,7 @@ void DBPSerialize_All(DBPArchive& ar, bool dos_running, bool game_running)
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_MPU401      ); break;
 			case __LINE__: DBPSERIALIZE_GET_FUNC(DBPSerialize_PCSPEAKER   ); break;
 			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_Voodoo,  >=5); break;
+			case __LINE__: DBPSERIALIZE_GET_FVER(DBPSerialize_CDPlayer,>=6); break;
 			case __LINE__: goto done; /*return;*/ default: continue;
 		}
 		size_t old_off = ar.GetOffset();

@@ -280,12 +280,17 @@ static  struct imagePlayer {
 	bool	GetCueFrame(int &frames, std::istream &in);
 	bool	GetCueString(std::string &str, std::istream &in);
 	bool	AddTrack(Track &curr, int &shift, int prestart, int &totalPregap, int currPregap);
+#ifdef C_DBP_SUPPORT_CDROM_CHD_IMAGE
+	bool	LoadChdFile(char *filename);
+#endif
 
 static	int	refCount;
 	std::vector<Track>	tracks;
 typedef	std::vector<Track>::iterator	track_it;
 	std::string	mcn;
 	Bit8u	subUnit;
+
+	friend void DBPSerialize_CDPlayer(struct DBPArchive& ar);
 };
 
 #ifdef C_DBP_NATIVE_CDROM

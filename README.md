@@ -19,11 +19,13 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Joystick emulation](#joystick-emulation)
     * [On-screen keyboard](#on-screen-keyboard)
     * [Gamepad mapper](#gamepad-mapper)
-	* [3dfx Voodoo Emulation](#3dfx-voodoo-emulation)
-    * [MIDI playback with SoundFonts](#midi-playback-with-soundfonts)
+    * [3dfx Voodoo Emulation](#3dfx-voodoo-emulation)
+    * [Multiplayer](#multiplayer)
+    * [MIDI playback with SoundFonts or MT-32](#midi-playback-with-soundfonts-or-mt-32)
     * [Cheats support](#cheats-support)
     * [Save states](#save-states)
     * [Rewind support](#rewind-support)
+    * [Shared system shells (like Windows 3)](#shared-system-shells-like-windows-3)
     * [Booter games](#booter-games)
     * [Loading M3U8 files](#loading-m3u8-files)
 * [Tips](#tips)
@@ -35,9 +37,7 @@ built for RetroArch/Libretro aiming for simplicity and ease of use.
     * [Change disk label with label command](#change-disk-label-with-label-command)
     * [Keyboard layout defaults to US](#keyboard-layout-defaults-to-us)
     * [Save file handling](#save-file-handling)
-* [Features not yet implemented](#features-not-yet-implemented)
-    * [Store ZIP seek index into save file](#store-zip-seek-index-into-save-file)
-* [Unsupported features](#unsupported-features)
+    * [Reading large files in ZIPs](#reading-large-files-in-zips)
 * [Building](#building)
     * [Windows](#windows)
     * [Linux](#linux)
@@ -84,10 +84,12 @@ any CD-ROM images available they will appear as the E: drive.
 
 There are two core options related to this feature:
 
-- `System > Advanced > Discard Disk Modifications`: If set, while running an installed operating system,
-  modifications to the C: drive will not be saved permanently. This allows the content to be closed any
-  time without worry of file system or registry corruption. Make sure to finish setting up the OS
-  by setting the screen resolution and installing device drivers first before setting this option.
+- `System > Advanced > OS Disk Modifications`: When running an installed operating system, modifications
+  to the C: drive will be made on the disk image by default. Setting it to 'Discard' will never save any
+  changes made on C: but allows the content to be closed any time without worry of file system or registry
+  corruption. The third option 'Save Difference Per Content' will store any changes made to the C: drive
+  into a file in the frontends save directory, but the OS disk image must never be modified again once used,
+  otherwise existing differences become unusable.
 - `System > Advanced > Force Normal Core in OS`: If you encounter program errors or crashes inside the
   installed operating system, this option can be used to switch to a more compatible but slower
   mode. The option can be toggled on and off as needed.
@@ -112,32 +114,37 @@ the gamepad while selecting `Restart` in the core menu.
 
 ### Automated controller mappings
 When a game is loaded, DOSBox Pure will try to detect the game and apply a controller mapping.  
-To see the applied mapping, check the `Port 1 Controls` screen in the RetroArch menu.
-It will show `Detected Automatic Key Mapping: <GAMENAME>`. Additionally you can set the core option
+To see the applied mapping, check Controller Port 1 under the "Controller Mapper" tab of the start menu.
+It will show `Mapping: <GAMENAME>`. Additionally you can set the core option
 `Input > Advanced > Automatic Game Pad Mappings` to `Enable with notification on game detection`.
 
 ### Mouse emulation
-Under the `Controls` screen in the RetroArch menu there are 2 mouse emulation modes available by
-switching the `Device Type` setting of any port with left/right. There is `Mouse with Left Analog Stick` and
+Under the "Controller Mapper" screen in the start menu there are 2 mouse emulation modes available by
+switching the `Preset` setting of any port. There is `Mouse with Left Analog Stick` and
 `Mouse with Right Analog Stick`.  
 When choosing left stick, the face buttons (B/A) will be used as left/right mouse buttons.  
 For the right stick the shoulder buttons L/R will be used as left/right mouse buttons.  
 The X button is the middle mouse button and L2/R2 can be used to speed up or slow down mouse movement.  
 There is also the core option `Input > Mouse Sensitivity` to increase/decrease mouse movement speed.
 
+The behavior of a real mouse or touch screen can be controlled by the `Input > Mouse Input Mode` option.
+- Virtual mouse (default) (best used when the frontend [grabs the mouse input](#playing-with-keyboard-and-mouse))
+- Direct controlled mouse (not supported by all games)
+- Touchpad mode (drag to move, tap to click, etc., best for touch screens)
+- Off (ignore mouse/touch inputs)
+
+In Windows 3.x it is possible to use [this driver](https://github.com/NattyNarwhal/vmwmouse) for direct controlled mouse support.
+
 ### Keyboard emulation
-For games that don't have automated controller mappings or are not detected successfully,
-by default the option `Input > Bind Unused Buttons` will assign all unused buttons on the game pad with
-some default key.  
-If the `Device Type` under the `Controls` screen in the RetroArch menu of any port is set to
-`Generic Keyboard Bindings` all buttons will be assigned with a keyboard key.
-Additionally it can be set to `Custom Keyboard Bindings` which will allow fully customizable mappings.
+For games that don't have automated controller mappings or are not detected successfully the core will map
+generic keyboard keys to all buttons. Use the "Controller Mapper" screen in the start menu or the
+[On-screen keyboard](#on-screen-keyboard) to freely customize all the mapped buttons.
 
 ### Joystick emulation
-There are multiple DOS era joysticks available as mappings under the `Controls` screen in the RetroArch menu.  
-`Gravis GamePad (1 D-Pad, 4 Buttons)`, `Basic joystick (2 Axes, 2 Buttons)`,
-`ThrustMaster Flight Stick (3 axes, 4 buttons, 1 hat)` and `Control both DOS joysticks (4 axes, 4 buttons)`.  
-These can be assigned to any port and the button layout can be remapped as with any other device type.
+There are multiple DOS era joysticks available as mappings under the "Controller Mapper" screen in the start menu.  
+`Gravis GamePad (4 Buttons)`, `First 2 Button Joystick` (2 Axes), `Second 2 Button Joystick` (2 Axes),
+`ThrustMaster Flight Stick` (3 axes, 4 buttons, 1 hat) and `Both DOS Joysticks` (4 axes, 4 buttons).  
+These can be assigned to any port and the button layout can be freely remapped.
 
 ### On-screen keyboard
 ![On-Screen Keyboard](images/onscreenkeyboard.png)
@@ -146,7 +153,9 @@ By pressing L3 on the gamepad (usually by pushing in the left analog stick) the 
 The cursor can be controlled with the controller (or mouse or keyboard) and L2/R2 will speed up or slow down
 the move speed.  
 If the cursor is moved above the middle of the screen the keyboard will move to the top.
-The button can be remapped in the controls menu and there is also a core options to disable it entirely.
+The button can be remapped in the controls menu and there is also a core option to disable it entirely.
+
+The L3 button can be changed to a different button with the [Gamepad mapper](#gamepad-mapper).
 
 ### Gamepad mapper
 ![Gamepad mapper](images/padmapper.png)
@@ -155,7 +164,7 @@ If you need even more customization of the controls than provided by the [Automa
 or the various presets for [mouse](#mouse-emulation), [keyboard](#keyboard-emulation) and [joysticks](#joystick-emulation) you can use
 the gamepad mapper.
 
-To open it, click the "PAD MAPPER" button in the [On-screen keyboard](#on-screen-keyboard).
+To open it, select "CONTROLLER MAPPER" in the start menu or click the "PAD MAPPER" button in the [On-screen keyboard](#on-screen-keyboard).
 
 It is available any time in-game and changes are immediately saved and applied when closing the mapper. Up to 4 functions can be mapped
 for any button/direction of the gamepad. A mapping can be to any function of the 3 emulated input devices: keyboard, mouse or joystick.
@@ -174,10 +183,20 @@ There are two core options related to this feature:
   it to 'low quality' only gives a small performance improvement. Disabling multi-threading is possible for example
   if your device gets too hot while using it but in general is not recommended.
 
-### MIDI playback with SoundFonts
+### Multiplayer
+The core emulates an IPX DOS driver and a serial modem (configurable to be a null modem or dial-up modem) as well as a
+NE2000 network card to be used in a [booted operating system](#installing-an-operating-system). To use it, just host
+or connect a multiplayer game with a supported frontend (RetroArch 1.16 and newer).
+
+To use the NE2000 card make sure to configure the Windows 95/98 driver to use base address port set to 0x300 and base IRQ set to 10.
+
+### MIDI playback with SoundFonts or MT-32
 If DOSBox Pure finds one or more `.SF2` sound font file in the `system` directory of the frontend, one of them
-can be selected via the `Audio > MIDI SoundFont` core option.  
-This sound font will then be used to play General Midi and Sound Canvas music.
+can be selected via the `Audio > MIDI SoundFont` core option. This sound font will then be used to play General Midi and Sound Canvas music.
+
+If the `system` directory contains a pair of `_control.rom` and `_pcm.rom` files, an MT-32 synthesizer can be emulated with them.
+
+Alternatively if the content mounted to the C: drive contains a file named DOSBOX.SF2 or MT32_CONTROL.ROM/MT32_PCM.ROM, it will be used as a per-game override to the core option.
 
 ### Cheats support
 DOSBox Pure exposes its memory for cheats in the libretro frontend.  
@@ -194,6 +213,20 @@ Save states might not be compatible across different versions of DOSBox Pure.
 ### Rewind support
 Using the core option `Save States Support`, rewinding can be enabled.  
 Keep in mind that rewind support comes at a high performance cost.
+
+### Shared system shells (like Windows 3)
+If DOSBox Pure finds any `.DOSZ` zip files in the `system` directory of the frontend, they will
+get listed in the start menu under a sub-menu with the name `[ Run System Shell ]`.
+
+When a shell is selected, DOSBox Pure will underlay the content of the shell's DOSZ zip file as
+the base of the file system of the C: drive.
+This way, one installation of (for example) Windows 3.1 can be used for multiple games, keeping the
+Windows installation and games in separate ZIP files.
+
+On startup it will look for any of the following files to automatically start the shell:
+- C:\WINDOWS.BAT
+- C:\AUTOEXEC.BAT
+- C:\WINDOWS\WIN.COM
 
 ### Booter games
 When loading a ZIP file which contains a floppy or hard-disk image or loading such a disk image directly,
@@ -263,19 +296,12 @@ The bigger the save, the less often it will be written out.
 Up to 1MB of total save data, it will be written out 2 seconds after the last file modification.
 Then gradually until at max 59MB and more, it will be written out 60 seconds after the last file modification.
 
-## Features not yet implemented
-
-### Store ZIP seek index into save file
+### Reading large files in ZIPs
 When a DOS games opens a large file and wants to read some data from near the end of the file,
 DOSBox Pure needs to decompress the entire file to do that. This can be most noticeable when mounting
-CD-ROM images from inside ZIP files.  
-Afterwards there is an index buffer which will be used to decompress random locations of the file
-and file access will be much faster.  
-This index buffer should be stored into the game save file to avoid having to slowly rebuild it
-every time the same game is launched.
-
-## Unsupported features
-For now, serial port and IPX emulation from base DOSBox have been removed.
+CD-ROM images from inside ZIP files. Afterwards there is an index buffer which will be used to decompress
+random locations of the file and file access will be much faster. This index buffer is stored into the
+game save file to avoid having to slowly rebuild it every time the same game is launched.
 
 ## Building
 DOSBox Pure has no dependency requirements besides a C++ compiler and the standard library.

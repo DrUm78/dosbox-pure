@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2020-2022 Bernhard Schelling
+ *  Copyright (C) 2020-2023 Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,12 +18,12 @@
 
 static retro_core_option_v2_category option_cats[] =
 {
-	{ "Emulation",   "Emulation Options",   "Core specific settings (latency, save states, start menu)." },
-	{ "Input",       "Input Options",       "Keyboard, mouse and joystick settings." },
-	{ "Performance", "Performance Options", "Adjust the performance of the emulated CPU." },
-	{ "Video",       "Video Options",       "Settings for the emulated graphics card and aspect ratio." },
-	{ "System",      "System Options",      "Other system settings for the emulated RAM and CPU." },
-	{ "Audio",       "Audio Options",       "MIDI, SoundBlaster and other audio settings." },
+	{ "Emulation",   "Emulation",   "Core specific settings (latency, save states, start menu)." },
+	{ "Input",       "Input",       "Keyboard, mouse and joystick settings." },
+	{ "Performance", "Performance", "Adjust the performance of the emulated CPU." },
+	{ "Video",       "Video",       "Settings for the emulated graphics card and aspect ratio." },
+	{ "System",      "System",      "Other system settings for the emulated RAM and CPU." },
+	{ "Audio",       "Audio",       "MIDI, SoundBlaster and other audio settings." },
 	{ NULL, NULL, NULL }
 };
 
@@ -88,22 +88,32 @@ static retro_core_option_v2_definition option_defs[] =
 		"false"
 	},
 	{
+		"dosbox_pure_strict_mode",
+		"Use Strict Mode", NULL,
+		"Disable the command line, running installed operating systems and using .BAT/.COM/.EXE/DOS.YML files from the save game.", NULL,
+		"Emulation",
+		{
+			{ "false", "Off" },
+			{ "true", "On" },
+		},
+		"false"
+	},
+	{
 		"dosbox_pure_menu_time",
 		"Advanced > Start Menu", NULL,
 		"Set the behavior of the start menu before and after launching a game." "\n"
 		"You can also force it to open by holding shift or L2/R2 when selecting 'Restart'.", NULL,
 		"Emulation",
 		{
+			{ "99", "Show at start, show again after game exit (default)" },
 #ifndef STATIC_LINKING
 			{ "5", "Show at start, shut down core 5 seconds after auto started game exit" },
 			{ "3", "Show at start, shut down core 3 seconds after auto started game exit" },
 			{ "0", "Show at start, shut down core immediately after auto started game exit" },
-#else
-			{ "5", "Show at start, show again after game exit (default)" },
 #endif
 			{ "-1", "Always show menu on startup and after game exit, ignore auto start setting" },
 		},
-		"5"
+		"99"
 	},
 	{
 		"dosbox_pure_latency",
@@ -141,19 +151,25 @@ static retro_core_option_v2_definition option_defs[] =
 
 	// Input
 	{
-		"dosbox_pure_bind_unused",
-		"Bind Unused Buttons", NULL,
-		"Bind all unused controller buttons to keyboard keys.\nCan be remapped in the Controls section of the core settings.", NULL,
-		"Input",
-		{ { "true", "On" }, { "false", "Off" } },
-		"true"
-	},
-	{
 		"dosbox_pure_on_screen_keyboard",
 		"Enable On Screen Keyboard", NULL,
 		"Enable the On Screen Keyboard feature which can be activated with the L3 button on the controller.", NULL,
 		"Input",
 		{ { "true", "On" }, { "false", "Off" } },
+		"true"
+	},
+	{
+		"dosbox_pure_mouse_input",
+		"Mouse Input Mode", NULL,
+		"You can disable input handling from a mouse or a touchscreen (emulated mouse through joypad will still work)." "\n"
+		"In touchpad mode use drag to move, tap to click, two finger tap to right-click and press-and-hold to drag", NULL,
+		"Input",
+		{
+			{ "true", "Virtual mouse (default)" },
+			{ "direct", "Direct controlled mouse (not supported by all games)" },
+			{ "pad", "Touchpad mode (see description, best for touch screens)" },
+			{ "false", "Off (ignore mouse inputs)" },
+		},
 		"true"
 	},
 	{
@@ -211,14 +227,6 @@ static retro_core_option_v2_definition option_defs[] =
 		"1.0"
 	},
 	{
-		"dosbox_pure_mouse_input",
-		"Advanced > Use Mouse Input", NULL,
-		"You can disable input handling from a mouse or a touchscreen (emulated mouse through joypad will still work).", NULL,
-		"Input",
-		{ { "true", "On (default)" }, { "false", "Off" } },
-		"true"
-	},
-	{
 		"dosbox_pure_auto_mapping",
 		"Advanced > Automatic Game Pad Mappings", NULL,
 		"DOSBox Pure can automatically apply a gamepad control mapping scheme when it detects a game." "\n"
@@ -270,7 +278,7 @@ static retro_core_option_v2_definition option_defs[] =
 		{
 			{ "10", "10%" }, { "20", "20%" }, { "30", "30%" }, { "40", "40%" }, { "50", "50%" }, { "60", "60%" }, { "70", "70%" }, { "80", "80%" }, { "90", "90%" }, { "100", "100%" },
 		},
-		"50"
+		"70"
 	},
 	{
 		"dosbox_pure_joystick_analog_deadzone",
@@ -453,10 +461,18 @@ static retro_core_option_v2_definition option_defs[] =
 	{
 		"dosbox_pure_aspect_correction",
 		"Aspect Ratio Correction", NULL,
-		"When enabled, the core's aspect ratio is set to what a CRT monitor would display." "\n\n", NULL, //end of Video section
+		"When enabled, the core's aspect ratio is set to what a CRT monitor would display.", NULL,
 		"Video",
 		{ { "false", "Off (default)" }, { "true", "On" } },
 		"false"
+	},
+	{
+		"dosbox_pure_overscan",
+		"Overscan Border Size", NULL,
+		"When enabled, show a border around the display. Some games use the color of the border to convey information." "\n\n", NULL, //end of Video section
+		"Video",
+		{ { "0", "Off (default)" }, { "1", "Small" }, { "2", "Medium" }, { "3", "Large" } },
+		"0"
 	},
 
 	// System
@@ -478,8 +494,22 @@ static retro_core_option_v2_definition option_defs[] =
 			{ "96", "96 MB" },
 			{ "128", "128 MB" },
 			{ "224", "224 MB" },
+			{ "256", "256 MB" },
+			{ "512", "512 MB" },
+			{ "1024", "1024 MB" },
 		},
 		"16"
+	},
+	{
+		"dosbox_pure_modem",
+		"Modem Type", NULL,
+		"Type of emulated modem on COM1 for netplay. With the dial-up modem, one side needs to dial any number to connect.", NULL,
+		"System",
+		{
+			{ "null", "Null Modem (Direct Serial)" },
+			{ "dial", "Dial-Up Modem (Hayes Standard)" },
+		},
+		"null"
 	},
 	{
 		"dosbox_pure_cpu_type",
@@ -524,11 +554,16 @@ static retro_core_option_v2_definition option_defs[] =
 	},
 	{
 		"dosbox_pure_bootos_ramdisk",
-		"Advanced > Discard OS Disk Modifications (restart required)", NULL,
-		"When running an installed operating system, modifications to the C: drive will not be saved permanently." "\n"
-		"This allows the content to be closed any time without worry of file system or registry corruption.", NULL,
+		"Advanced > OS Disk Modifications (restart required)", NULL,
+		"When running an installed operating system, modifications to the C: drive will be made on the disk image by default." "\n"
+		"Setting it to 'Discard' allows the content to be closed any time without worry of file system or registry corruption." "\n"
+		"When using 'Save Difference Per Content' the disk image must never be modified again, otherwise existing differences become unusable.", NULL,
 		"System",
-		{ { "false", "Off (default)" }, { "true", "On" } },
+		{
+			{ "false", "Keep (default)" },
+			{ "true", "Discard" },
+			{ "diff", "Save Difference Per Content" },
+		},
 		"false"
 	},
 	{
@@ -651,7 +686,15 @@ static retro_core_option_v2_definition option_defs[] =
 		"dosbox_pure_gus",
 		"Advanced > Enable Gravis Ultrasound (restart required)", NULL,
 		"Enable Gravis Ultrasound emulation. Settings are fixed at port 0x240, IRQ 5, DMA 3." "\n"
-		"If the ULTRADIR variable needs to be different than the default 'C:\\ULTRASND' you need to issue 'SET ULTRADIR=...' in the command line or in a batch file." "\n\n", NULL, //end of Audio > Advanced section
+		"If the ULTRADIR variable needs to be different than the default 'C:\\ULTRASND' you need to issue 'SET ULTRADIR=...' in the command line or in a batch file.", NULL,
+		"Audio",
+		{ { "false", "Off (default)" }, { "true", "On" } },
+		"false"
+	},
+	{
+		"dosbox_pure_swapstereo",
+		"Advanced > Swap Stereo Channels", NULL,
+		"Swap the left and the right audio channel." "\n\n", NULL, //end of Audio > Advanced section
 		"Audio",
 		{ { "false", "Off (default)" }, { "true", "On" } },
 		"false"

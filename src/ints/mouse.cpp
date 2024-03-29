@@ -128,6 +128,11 @@ static struct {
 	Bit16s gran_x,gran_y;
 } mouse;
 
+static struct {
+	float x, y;
+	bool updated;
+} mouse_vmware;
+
 bool Mouse_SetPS2State(bool use) {
 	if (use && (!ps2callbackinit)) {
 		useps2callback = false;
@@ -229,6 +234,7 @@ INLINE void Mouse_AddEvent(Bit8u type) {
 		PIC_AddEvent(MOUSE_Limit_Events,MOUSE_DELAY);
 		PIC_ActivateIRQ(MOUSE_IRQ);
 	}
+	mouse_vmware.updated = true;
 }
 
 // ***************************************************************************
@@ -491,14 +497,26 @@ void Mouse_CursorMoved(float xrel,float yrel,float x,float y,bool emulate) {
 				mouse.x = x*mouse.max_x;
 				mouse.y = y*mouse.max_y;
 			} else {
+#ifdef C_DBP_LIBRETRO // DBP: use same speed for emulate true and false
+				mouse.x += dx;
+				mouse.y += dy;
+#else
 				mouse.x += xrel;
 				mouse.y += yrel;
+#endif
 			}
 		} else { // Games faking relative movement through absolute coordinates. Quite surprising that this actually works..
+#ifdef C_DBP_LIBRETRO // DBP: use same speed for emualte true and false
+			mouse.x += dx;
+			mouse.y += dy;
+#else
 			mouse.x += xrel;
 			mouse.y += yrel;
+#endif
 		}
 	}
+	mouse_vmware.x = x;
+	mouse_vmware.y = y;
 
 	/* ignore constraints if using PS2 mouse callback in the bios */
 
@@ -730,6 +748,56 @@ static void Mouse_Used(void) {
 		Mouse_AutoLock(true);
 		autolock_enabled=true;
 	}
+}
+
+//DBP: Added VMware mouse protocol support from DOSBox Staging by FeralChild64
+//     Source: https://github.com/FeralChild64/dosbox-staging/commit/d183abd
+static Bitu Mouse_VMWare_PortRead(Bitu port, Bitu iolen) {
+	//LOG_MSG("VMWARE: Port Read %x - Len: %u - 0x%08x - %x", (int)port, (int)iolen, reg_eax, reg_ebx);
+	if (reg_eax != 0x564D5868u) // magic number for all VMware calls
+		return 0;
+
+	switch (reg_cx)
+	{
+		case 10: //CMD_GETVERSION:
+			reg_eax = 0x3442554a; // FIXME: should we respond with something resembling VMware?
+			reg_ebx = 0x564D5868;
+			break;
+		case 39: //CMD_ABSPOINTER_DATA:
+			reg_eax = ((mouse.buttons & 1) ? 0x20 : 0) | ((mouse.buttons & 2) ? 0x10 : 0) | ((mouse.buttons & 4) ? 0x08 : 0);
+			reg_ebx = (Bit32u)(mouse_vmware.x * 0xFFFF);
+			reg_ecx = (Bit32u)(mouse_vmware.y * 0xFFFF);
+			reg_edx = 0;//(mouse_wheel >= 0) ? mouse_wheel : 256 + mouse_wheel;
+			//mouse_wheel = 0;
+			break;
+		case 40: //CMD_ABSPOINTER_STATUS:
+			reg_eax = mouse_vmware.updated ? 4 : 0;
+			mouse_vmware.updated = false;
+			break;
+		case 41: //CMD_ABSPOINTER_COMMAND:
+			switch (reg_ebx)
+			{
+				case 0x45414552: //ABSPOINTER_ENABLE:
+					// can be safely ignored
+					break;
+				case 0xF5: //ABSPOINTER_RELATIVE:
+					//vmware_mouse = false;
+					//if (!MOUSE_IsLocked()) SDL_ShowCursor(SDL_ENABLE);
+					break;
+				case 0x53424152: //ABSPOINTER_ABSOLUTE:
+					//vmware_mouse = true;
+					//if (!MOUSE_IsLocked()) SDL_ShowCursor(SDL_DISABLE);
+					break;
+				default:
+					LOG_MSG("VMWARE: unknown mouse subcommand 0x%08x", reg_ebx);
+					break;
+			}
+			break;
+		default:
+			LOG_MSG("VMWARE: unknown command 0x%08x", reg_ecx);
+			break;
+	}
+	return reg_ax;
 }
 
 static Bitu INT33_Handler(void) {
@@ -1194,6 +1262,8 @@ void MOUSE_Init(Section* /*sec*/) {
 	Mouse_ResetHardware();
 	Mouse_Reset();
 	Mouse_SetSensitivity(50,50,50);
+
+	IO_RegisterReadHandler(0x5658, &Mouse_VMWare_PortRead, IO_MD, 2); //VMWARE_PORT, VMWARE_PORTHB
 }
 
 #include <dbp_serialize.h>

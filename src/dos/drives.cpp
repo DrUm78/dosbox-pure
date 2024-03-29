@@ -1,6 +1,6 @@
 /*
  *  Copyright (C) 2002-2021  The DOSBox Team
- *  Copyright (C) 2020-2022  Bernhard Schelling
+ *  Copyright (C) 2020-2023  Bernhard Schelling
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -257,7 +257,7 @@ static void DRIVES_ShutDown(Section* /*sec*/) {
 	// this needs to run before MSCDEX_ShutDown and DOS_ShutDown
 	bool MSCDEX_HasDrive(char);
 	DBP_ASSERT(MSCDEX_HasDrive(-1) == false); // this fails had mscdex already shut down (confirm MSCDEX_ShutDown not yet called)
-	DBP_ASSERT(Drives['Z'-'A']->TestDir("")); // virtual drive still needs to exist (confirm DOS_ShutDown not yet called)
+	DBP_ASSERT(Drives['Z'-'A']->TestDir((char*)"")); // virtual drive still needs to exist (confirm DOS_ShutDown not yet called)
 
 	// need to make sure this is called before drives are deleted as it may contain disks mounted from files managed by drives
 	void BIOS_ShutdownDisks(void);
@@ -316,33 +316,32 @@ void DrivePathRemoveEndingDots(const char** path, char path_buf[DOS_PATHLENGTH])
 	}
 }
 
-bool DriveForceCloseFile(DOS_Drive* drv, const char* name) {
-	Bit8u i, drive = DOS_DRIVES;
-	for (i = 0; i < DOS_DRIVES; i++) {
-		if (!Drives[i]) continue;
-		if (Drives[i] == drv) {
-			drive = i;
-			break;
-		}
-		unionDrive* ud = dynamic_cast<unionDrive*>(Drives[i]);
-		if (ud && ud->IsShadowedDrive(drv)) {
-			drive = i;
-			break;
-		}
-	}
+Bit8u DriveGetIndex(DOS_Drive* drv)
+{
+	struct Local { static bool Compare(DOS_Drive *outer, DOS_Drive *inner)
+	{
+		DOS_Drive *a, *b;
+		return (outer == inner || (outer->GetShadows(a, b) && (Compare(a, inner) || Compare(b, inner))));
+	}};
+	for (Bit8u i = 0; i < DOS_DRIVES; i++) if (Drives[i] && Local::Compare(Drives[i], drv)) return i;
+	return DOS_DRIVES;
+}
+
+bool DriveForceCloseFile(DOS_Drive* drv, const char* name)
+{
+	Bit8u drive = DriveGetIndex(drv);
+	if (drive == DOS_DRIVES) return false;
 	DOSPATH_REMOVE_ENDINGDOTS(name);
 	bool found_file = false;
-	if (drive != DOS_DRIVES) {
-		for (i = 0; i < DOS_FILES; i++) {
-			DOS_File *f = Files[i];
-			if (!f || f->GetDrive() != drive || !f->name) continue;
-			const char* fname = f->name;
-			DOSPATH_REMOVE_ENDINGDOTS(fname);
-			if (strcasecmp(name, fname)) continue;
-			DBP_ASSERT((Files[i]->refCtr > 0) == Files[i]->open); // closed files can hang around while the DOS program still holds the handle
-			while (f->refCtr > 0) { if (f->IsOpen()) f->Close(); f->RemoveRef(); }
-			found_file = true;
-		}
+	for (Bit8u i = 0; i < DOS_FILES; i++) {
+		DOS_File *f = Files[i];
+		if (!f || f->GetDrive() != drive || !f->name) continue;
+		const char* fname = f->name;
+		DOSPATH_REMOVE_ENDINGDOTS(fname);
+		if (strcasecmp(name, fname)) continue;
+		DBP_ASSERT((Files[i]->refCtr > 0) == Files[i]->open); // closed files can hang around while the DOS program still holds the handle
+		while (f->refCtr > 0) { if (f->IsOpen()) f->Close(); f->RemoveRef(); }
+		found_file = true;
 	}
 	return found_file;
 }
@@ -363,17 +362,25 @@ Bit32u DBP_Make8dot3FileName(char* target, Bit32u target_len, const char* source
 	{
 		static void AppendFiltered(char*& trg, const char* trg_end, const char* src, Bit32u len)
 		{
+			char DOS_ToUpperAndFilter(char c);
 			for (; trg < trg_end && len--; trg++)
-			{
-				char DOS_ToUpperAndFilter(char c);
 				*trg = DOS_ToUpperAndFilter(*(src++));
-			}
 		}
 	};
 	const char *target_start = target, *target_end = target + target_len, *source_end = source + source_len, *sDot;
 	for (sDot = source_end - 1; *sDot != '.' && sDot > source; sDot--);
 	Bit32u baseLen = (Bit32u)((*sDot == '.' ? sDot : source_end) - source);
 	Bit32u extLen = (Bit32u)(*sDot == '.' ? source_end - 1 - sDot : 0);
+	if (baseLen <= 8 && extLen <= 3 && target_len >= source_len)
+	{
+		extern const Bit8u DOS_ValidCharBits[32];
+		for (const char* p = source; p != source_end; p++)
+			if (!(DOS_ValidCharBits[((Bit8u)*p)/8] & (1<<(((Bit8u)*p)%8))) && p != sDot)
+				goto need_filter;
+		memcpy(target, source, source_len);
+		return source_len;
+		need_filter:;
+	}
 	Bit32u baseLeft = (baseLen > 8 ? 4 : baseLen), baseRight = (baseLen > 8 ? 4 : 0);
 	Func::AppendFiltered(target, target_end, source, baseLeft);
 	Func::AppendFiltered(target, target_end, source + baseLen - baseRight, baseRight);
@@ -407,16 +414,16 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	Bit8u drive = (filename[1] == ':' ? ((filename[0]|0x20)-'a') : (control ? DOS_GetDefaultDrive() : DOS_DRIVES));
 	if (drive < DOS_DRIVES && Drives[drive])
 	{
-		char dos_path[DOS_PATHLENGTH + 1], *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;
+		char dos_path[DOS_PATHLENGTH + 2], *p_dos = dos_path, *p_dos_end = p_dos + DOS_PATHLENGTH;
 		const char* n = filename + (filename[1] == ':' ? 2 : 0);
 		if (*n == '\\' || *n == '/') n++; // absolute path
 		else if (*Drives[drive]->curdir) // relative path
 		{
 			strcpy(p_dos, Drives[drive]->curdir);
 			p_dos += strlen(p_dos);
-			*(p_dos++) = '\\';
 		}
-		if (p_dos == dos_path)
+		bool transformed = (p_dos != dos_path);
+		if (!transformed)
 		{
 			// try open path untransformed (works on localDrive and with paths without long file names)
 			if (writable && Drives[drive]->FileOpen(&dos_file, (char*)n, OPEN_READWRITE))
@@ -424,26 +431,32 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 			if (Drives[drive]->FileOpen(&dos_file, (char*)n, OPEN_READ))
 				goto get_file_size_write_protected;
 		}
-		for (const char *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos != p_dos_end; nDir = ++n)
+		for (const char *nDir = n, *nEnd = n + strlen(n); n != nEnd + 1 && p_dos < p_dos_end; nDir = ++n)
 		{
 			while (*n != '/' && *n != '\\' && n != nEnd) n++;
-			if (n == nDir || (nDir[0] == '.' && n == nDir + 1)) continue;
+			if (n == nDir || (nDir[0] == '.' && n == nDir + 1)) { transformed = true; continue; }
 			if (nDir[0] == '.' && nDir[1] == '.' && n == nDir + 2)
 			{
 				// Remove the last parent directory in dos_path on ..
-				if (p_dos == dos_path) continue;
-				for (p_dos--; p_dos > dos_path && p_dos[-1] != '\\'; p_dos--) {}
+				transformed = true;
+				while (p_dos > dos_path && *(--p_dos) != '\\') {}
 				continue;
 			}
 
 			// Create a 8.3 filename from a 4 char prefix and a suffix if filename is too long
-			p_dos += DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, (Bit32u)(n - nDir));
-			*(p_dos++) = (n == nEnd ? '\0' : '\\');
+			if (p_dos != dos_path) *(p_dos++) = '\\';
+			Bit32u nLen = (Bit32u)(n - nDir), tLen = DBP_Make8dot3FileName(p_dos, (Bit32u)(p_dos_end - p_dos), nDir, nLen);
+			transformed = transformed || (tLen != nLen) || memcmp(p_dos, nDir, nLen) || *n == '/';
+			p_dos += tLen;
 		}
-		if (writable && Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READWRITE))
-			goto get_file_size;
-		if (Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READ))
-			goto get_file_size_write_protected;
+		if (transformed)
+		{
+			*p_dos = '\0';
+			if (writable && Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READWRITE))
+				goto get_file_size;
+			if (Drives[drive]->FileOpen(&dos_file, dos_path, OPEN_READ))
+				goto get_file_size_write_protected;
+		}
 	}
 
 	if (!force_mounted) {
@@ -479,15 +492,15 @@ DOS_File *FindAndOpenDosFile(char const* filename, Bit32u *bsize, bool* writable
 	return dos_file;
 }
 
-bool FindAndReadDosFile(char const* filename, std::string& out, Bit32u maxsize, char const* relative_to)
+bool ReadAndClose(DOS_File *df, std::string& out, Bit32u maxsize)
 {
-	Bit32u filesize;
-	DOS_File* df = FindAndOpenDosFile(filename, &filesize, NULL, relative_to);
 	if (!df) return false;
+	Bit32u curlen = (Bit32u)out.size(), filesize = 0, seekzero = 0;
+	df->Seek(&filesize, DOS_SEEK_END);
+	df->Seek(&seekzero, DOS_SEEK_SET);
 	if (!filesize || filesize > maxsize) { df->Close(); delete df; return false; }
-	out.resize(filesize + 1);
-	out[filesize] = '\0';
-	Bit8u* buf = (Bit8u*)&out[0];
+	out.resize(curlen + filesize);
+	Bit8u* buf = (Bit8u*)&out[curlen];
 	for (Bit16u read; filesize; filesize -= read, buf += read)
 	{
 		read = (Bit16u)(filesize > 0xFFFF ? 0xFFFF : filesize);

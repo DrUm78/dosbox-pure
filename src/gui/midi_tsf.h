@@ -18,7 +18,13 @@
 
 #include "mixer.h"
 
+#define STB_VORBIS_HEADER_ONLY
+#include "../dos/stb_vorbis.inl"
+#include "../dos/drives.h"
+
 #define TSF_IMPLEMENTATION
+#define TSF_STATIC
+#define TSF_NO_STDIO
 #include "tsf.h"
 
 static void MIDI_TSF_CallBack(Bitu len);
@@ -28,7 +34,7 @@ struct MidiHandler_tsf : public MidiHandler
 	MidiHandler_tsf() : MidiHandler(), chan(NULL), mo(NULL), f(NULL), sf(NULL) {}
 	MixerChannel* chan;
 	MixerObject*  mo;
-	FILE*         f;
+	DOS_File*     f;
 	tsf*          sf;
 
 	const char * GetName(void) { return "tsf"; };
@@ -37,10 +43,10 @@ struct MidiHandler_tsf : public MidiHandler
 	{
 		if (!conf || !*conf) return false;
 		size_t conf_len = strlen(conf);
-		if (conf_len <= 4 || strcasecmp(conf + conf_len - 4, ".sf2")) return false;
+		if (conf_len <= 4 || strncasecmp(conf + conf_len - 4, ".sf", 3)) return false;
 
 		DBP_ASSERT(!f);
-		f = fopen_wrap(conf, "rb");
+		f = FindAndOpenDosFile(conf);
 		if (!f) return false;
 
 		DBP_ASSERT(!chan);
@@ -53,19 +59,27 @@ struct MidiHandler_tsf : public MidiHandler
 
 	void Close(void)
 	{
-		if (f)      { fclose(f);           f      = NULL; }
+		if (f)      { f->Close();delete f; f      = NULL; }
 		if (sf)     { tsf_close(sf);       sf     = NULL; }
 		if (chan)   { chan->Enable(false); chan   = NULL; }
 		if (mo)     { delete mo;           mo     = NULL; } // also deletes chan!
 	};
 
+	static int tsf_stream_dosfile_skip(DOS_File* f, unsigned int count) { return !!f->Seek(&count, DOS_SEEK_CUR); }
+	static int tsf_stream_dosfile_read(DOS_File* f, Bit8u* p, unsigned int sz)
+	{
+		for (Bit16u read; sz; sz -= read, p += read) { read = (Bit16u)(sz > 0xFFFF ? 0xFFFF : sz); if (!f->Read(p, &read) || !read) return false; }
+		return true;
+	}
+
 	bool LoadFont()
 	{
 		if (sf) return true;
 		if (!f) return false;
-		struct tsf_stream stream = { f, (int(*)(void*,void*,unsigned int))&tsf_stream_stdio_read, (int(*)(void*,unsigned int))&tsf_stream_stdio_skip };
+		struct tsf_stream stream = { f, (int(*)(void*,void*,unsigned int))&tsf_stream_dosfile_read, (int(*)(void*,unsigned int))&tsf_stream_dosfile_skip };
 		sf = tsf_load(&stream);
-		fclose(f);
+		f->Close();
+		delete f;
 		f = NULL;
 		if (!sf) return false;
 
@@ -128,7 +142,7 @@ static void MIDI_TSF_CallBack(Bitu len)
 	Midi_tsf.chan->AddSamples_s16(len, (Bit16s*)MixTemp);
 }
 
-bool MIDI_TSF_SwitchSF2(const char* path)
+bool MIDI_TSF_SwitchSF(const char* path)
 {
 	if (midi.handler != &Midi_tsf) return false;
 
